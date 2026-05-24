@@ -3,16 +3,16 @@ package models
 import "time"
 
 type CrawlTask struct {
-	URL          string
-	Depth        int
-	RetryCount   int
-	NextRunTime  time.Time
+	URL         string
+	Depth       int
+	RetryCount  int
+	NextRunTime time.Time
 }
 
 type ParseTask struct {
-	URL         string
-	Depth       int
-	HTMLContent string
+	URL   string
+	S3Key string
+	Depth int
 }
 
 type URLState int

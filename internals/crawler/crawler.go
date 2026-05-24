@@ -1,11 +1,13 @@
 package crawler
 
 import (
+	"context"
 	"io"
 	"log"
 	"net/http"
 
 	"github.com/lejaynd/webcrawler/internals/crawlerFrontier"
+	"github.com/lejaynd/webcrawler/internals/db"
 	"github.com/lejaynd/webcrawler/internals/lease"
 	"github.com/lejaynd/webcrawler/internals/models"
 	"github.com/lejaynd/webcrawler/internals/parserQueue"
@@ -18,31 +20,45 @@ type CrawlerWorker struct {
 	ParserQueue  *parserQueue.ParserQueue
 	Scheduler    *scheduler.Scheduler
 	LeaseManager *lease.LeaseManager
+	S3Store      *db.S3Store
+	SQLStore     *db.SQLStore
 }
 
-func NewCrawlerWorker(f *crawlerFrontier.Frontier, pq *parserQueue.ParserQueue, s *scheduler.Scheduler, lm *lease.LeaseManager) *CrawlerWorker {
+func NewCrawlerWorker(
+	f *crawlerFrontier.Frontier,
+	pq *parserQueue.ParserQueue,
+	s *scheduler.Scheduler,
+	lm *lease.LeaseManager,
+	s3 *db.S3Store,
+	sql *db.SQLStore,
+) *CrawlerWorker {
 	return &CrawlerWorker{
 		Frontier:     f,
 		ParserQueue:  pq,
 		Scheduler:    s,
 		LeaseManager: lm,
+		S3Store:      s3,
+		SQLStore:     sql,
 	}
 }
 
 func (c *CrawlerWorker) Run() {
 	for {
 		task := <-c.Frontier.ReadyChan
+		if c.Scheduler.Paused.Load() {
+			continue
+		}
 		c.process(task)
 	}
 }
 
 func (c *CrawlerWorker) process(task models.CrawlTask) {
 	task.URL = utils.NormalizeURL(task.URL)
+	ctx := context.Background()
 
-	//processing
 	c.LeaseManager.MarkInFlight(task)
 
-	//fetch html
+	//fetch HTML
 	log.Printf("[Crawler] Fetching %s\n", task.URL)
 	resp, err := http.Get(task.URL)
 	if err != nil {
@@ -68,13 +84,26 @@ func (c *CrawlerWorker) process(task models.CrawlTask) {
 		return
 	}
 
-	//fwd to parsing queue
-	c.ParserQueue.Queue <- models.ParseTask{
-		URL:         task.URL,
-		Depth:       task.Depth,
-		HTMLContent: string(bodyBytes),
+	//upload HTML to s3
+	s3Key, s3Link, err := c.S3Store.UploadHTML(ctx, task.URL, string(bodyBytes))
+	if err != nil {
+		log.Printf("[Crawler] S3 upload failed for %s: %v\n", task.URL, err)
+		c.LeaseManager.MarkSuccess(task.URL)
+		c.Scheduler.Retries <- task
+		return
+	}
+	log.Printf("[Crawler] Uploaded %s → %s\n", task.URL, s3Link)
+
+	//insert record into SQL
+	if err := c.SQLStore.InsertRecord(task.URL, s3Link, task.Depth); err != nil {
+		log.Printf("[Crawler] SQL insert failed for %s: %v\n", task.URL, err)
 	}
 
-	//success
+	c.ParserQueue.Queue <- models.ParseTask{
+		URL:   task.URL,
+		S3Key: s3Key,
+		Depth: task.Depth,
+	}
+
 	c.LeaseManager.MarkSuccess(task.URL)
 }

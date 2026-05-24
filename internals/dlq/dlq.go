@@ -8,7 +8,7 @@ import (
 
 type DLQ interface {
 	Push(task models.CrawlTask) error
-	getAll() []models.CrawlTask
+	GetAll() []models.CrawlTask
 }
 
 type InMemoryDLQ struct {
@@ -30,7 +30,7 @@ func (d *InMemoryDLQ) Push(task models.CrawlTask) error {
 	return nil
 }
 
-func (d *InMemoryDLQ) getAll() []models.CrawlTask {
+func (d *InMemoryDLQ) GetAll() []models.CrawlTask {
 	d.lock.Lock()
 	defer d.lock.Unlock()
 

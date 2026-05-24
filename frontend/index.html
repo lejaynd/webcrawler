@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WebCrawler — Crawl &amp; Ask</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0f1117;
+      --surface: #1a1d27;
+      --surface-hover: #222632;
+      --border: #2a2e3d;
+      --text: #e4e4e7;
+      --text-muted: #8b8fa3;
+      --accent: #6c5ce7;
+      --accent-glow: rgba(108, 92, 231, 0.25);
+      --green: #00d2a0;
+      --green-glow: rgba(0, 210, 160, 0.15);
+      --red: #ff6b6b;
+      --radius: 12px;
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 40px 20px;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 40px;
+    }
+
+    header h1 {
+      font-size: 1.8rem;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+      background: linear-gradient(135deg, var(--accent), var(--green));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    header p {
+      color: var(--text-muted);
+      font-size: 0.9rem;
+      margin-top: 6px;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 28px;
+      width: 100%;
+      max-width: 620px;
+      margin-bottom: 20px;
+      transition: border-color 0.2s;
+    }
+
+    .card:hover { border-color: #3a3e4d; }
+
+    .card-title {
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 1.2px;
+      color: var(--text-muted);
+      margin-bottom: 16px;
+    }
+
+    .input-row {
+      display: flex;
+      gap: 10px;
+    }
+
+    input[type="text"], input[type="number"] {
+      flex: 1;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 16px;
+      color: var(--text);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.88rem;
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    input[type="number"] {
+      max-width: 90px;
+      text-align: center;
+    }
+
+    input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-glow);
+    }
+
+    input::placeholder { color: #4a4e5e; }
+
+    button {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 12px 24px;
+      font-family: 'Inter', sans-serif;
+      font-size: 0.88rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform 0.1s, opacity 0.2s, box-shadow 0.2s;
+      white-space: nowrap;
+    }
+
+    button:hover {
+      box-shadow: 0 4px 20px var(--accent-glow);
+      transform: translateY(-1px);
+    }
+
+    button:active { transform: translateY(0); }
+
+    button:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+      transform: none;
+      box-shadow: none;
+    }
+
+    /* Status bar */
+    .status-bar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 14px 18px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      margin-top: 16px;
+      font-size: 0.85rem;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--text-muted);
+      flex-shrink: 0;
+    }
+
+    .status-dot.crawling {
+      background: #fbbf24;
+      animation: pulse 1.2s ease-in-out infinite;
+    }
+
+    .status-dot.ready {
+      background: var(--green);
+      box-shadow: 0 0 8px var(--green-glow);
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(0.8); }
+    }
+
+    .status-text { color: var(--text-muted); }
+    .status-text span { color: var(--text); font-weight: 500; }
+
+    /* QA section */
+    .hidden { display: none !important; }
+
+    .qa-card { transition: opacity 0.3s, transform 0.3s; }
+    .qa-card.visible {
+      animation: slideUp 0.3s ease-out;
+    }
+
+    @keyframes slideUp {
+      from { opacity: 0; transform: translateY(12px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Results */
+    .results {
+      margin-top: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .result-item {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 20px;
+      animation: slideUp 0.3s ease-out;
+    }
+
+    .result-question {
+      font-size: 0.82rem;
+      color: var(--text-muted);
+      margin-bottom: 10px;
+      font-style: italic;
+    }
+
+    .result-answer {
+      font-size: 0.92rem;
+      line-height: 1.65;
+      color: var(--text);
+      white-space: pre-wrap;
+    }
+
+    .result-citations {
+      margin-top: 14px;
+      padding-top: 12px;
+      border-top: 1px solid var(--border);
+    }
+
+    .result-citations-label {
+      font-size: 0.72rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--text-muted);
+      margin-bottom: 8px;
+    }
+
+    .citation-link {
+      display: block;
+      color: var(--accent);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.78rem;
+      text-decoration: none;
+      padding: 4px 0;
+      transition: color 0.2s;
+      word-break: break-all;
+    }
+
+    .citation-link:hover { color: var(--green); }
+
+    /* Loading spinner */
+    .spinner {
+      display: inline-block;
+      width: 16px;
+      height: 16px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.6s linear infinite;
+      margin-right: 8px;
+      vertical-align: middle;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .error-msg {
+      color: var(--red);
+      font-size: 0.85rem;
+      margin-top: 10px;
+    }
+
+    .duration-label {
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      align-self: center;
+      white-space: nowrap;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>WebCrawler</h1>
+    <p>Crawl a site, then ask questions about it</p>
+  </header>
+
+  <!-- Step 1: Seed URL -->
+  <div class="card" id="crawl-card">
+    <div class="card-title">Crawl</div>
+    <div class="input-row">
+      <input type="text" id="seed-url" placeholder="https://example.com" />
+      <input type="number" id="duration" value="30" min="10" max="300" title="Duration in seconds" />
+      <span class="duration-label">sec</span>
+      <button id="crawl-btn" onclick="startCrawl()">Start</button>
+    </div>
+    <div id="status-bar" class="status-bar hidden">
+      <div class="status-dot" id="status-dot"></div>
+      <div class="status-text" id="status-text">Idle</div>
+    </div>
+    <div id="crawl-error" class="error-msg hidden"></div>
+  </div>
+
+  <!-- Step 2: Ask Questions -->
+  <div class="card qa-card hidden" id="qa-card">
+    <div class="card-title">Ask</div>
+    <div class="input-row">
+      <input type="text" id="question-input" placeholder="What is this site about?" />
+      <button id="ask-btn" onclick="askQuestion()">Ask</button>
+    </div>
+    <div id="ask-error" class="error-msg hidden"></div>
+    <div class="results" id="results"></div>
+  </div>
+
+  <script>
+    let pollInterval = null;
+
+    async function startCrawl() {
+      const seedURL = document.getElementById('seed-url').value.trim();
+      const duration = parseInt(document.getElementById('duration').value) || 30;
+      const errorEl = document.getElementById('crawl-error');
+      errorEl.classList.add('hidden');
+
+      if (!seedURL) {
+        errorEl.textContent = 'Please enter a URL';
+        errorEl.classList.remove('hidden');
+        return;
+      }
+
+      const btn = document.getElementById('crawl-btn');
+      btn.disabled = true;
+      btn.textContent = 'Starting…';
+
+      try {
+        const res = await fetch('/api/crawl', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ seedURL, duration })
+        });
+
+        if (!res.ok) {
+          throw new Error(await res.text());
+        }
+
+        // Show status bar
+        const statusBar = document.getElementById('status-bar');
+        statusBar.classList.remove('hidden');
+        updateStatusUI('crawling', 0, duration);
+
+        // Hide Q&A card during crawl
+        document.getElementById('qa-card').classList.add('hidden');
+        document.getElementById('results').innerHTML = '';
+
+        // Poll status
+        if (pollInterval) clearInterval(pollInterval);
+        pollInterval = setInterval(pollStatus, 2000);
+
+      } catch (err) {
+        errorEl.textContent = err.message;
+        errorEl.classList.remove('hidden');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Start';
+      }
+    }
+
+    async function pollStatus() {
+      try {
+        const res = await fetch('/api/status');
+        const data = await res.json();
+
+        updateStatusUI(data.status, data.pagesCrawled, data.remaining);
+
+        if (data.status === 'ready') {
+          clearInterval(pollInterval);
+          pollInterval = null;
+
+          // Show Q&A card
+          const qaCard = document.getElementById('qa-card');
+          qaCard.classList.remove('hidden');
+          qaCard.classList.add('visible');
+          document.getElementById('question-input').focus();
+        }
+      } catch (err) {
+        console.error('Poll error:', err);
+      }
+    }
+
+    function updateStatusUI(status, pages, remaining) {
+      const dot = document.getElementById('status-dot');
+      const text = document.getElementById('status-text');
+
+      dot.className = 'status-dot ' + status;
+
+      if (status === 'crawling') {
+        const rem = remaining != null ? remaining : '…';
+        text.innerHTML = `Crawling… <span>${pages}</span> pages · <span>${rem}s</span> remaining`;
+      } else if (status === 'ready') {
+        text.innerHTML = `Done — <span>${pages}</span> pages ready for Q&A`;
+      } else {
+        text.innerHTML = 'Idle';
+      }
+    }
+
+    async function askQuestion() {
+      const input = document.getElementById('question-input');
+      const question = input.value.trim();
+      const errorEl = document.getElementById('ask-error');
+      errorEl.classList.add('hidden');
+
+      if (!question) return;
+
+      const btn = document.getElementById('ask-btn');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span>Thinking…';
+
+      try {
+        const res = await fetch('/api/ask', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ question })
+        });
+
+        if (!res.ok) {
+          throw new Error(await res.text());
+        }
+
+        const data = await res.json();
+        addResult(question, data.answer, data.citations || []);
+        input.value = '';
+
+      } catch (err) {
+        errorEl.textContent = err.message;
+        errorEl.classList.remove('hidden');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Ask';
+      }
+    }
+
+    function addResult(question, answer, citations) {
+      const container = document.getElementById('results');
+
+      const item = document.createElement('div');
+      item.className = 'result-item';
+
+      let citationsHTML = '';
+      if (citations.length > 0) {
+        const links = citations.map(url =>
+          `<a class="citation-link" href="${escapeHTML(url)}" target="_blank" rel="noopener">${escapeHTML(url)}</a>`
+        ).join('');
+        citationsHTML = `
+          <div class="result-citations">
+            <div class="result-citations-label">Citations</div>
+            ${links}
+          </div>`;
+      }
+
+      item.innerHTML = `
+        <div class="result-question">Q: ${escapeHTML(question)}</div>
+        <div class="result-answer">${escapeHTML(answer)}</div>
+        ${citationsHTML}
+      `;
+
+      container.prepend(item);
+    }
+
+    function escapeHTML(str) {
+      const div = document.createElement('div');
+      div.textContent = str;
+      return div.innerHTML;
+    }
+
+    // Enter key support
+    document.getElementById('seed-url').addEventListener('keydown', e => {
+      if (e.key === 'Enter') startCrawl();
+    });
+    document.getElementById('question-input').addEventListener('keydown', e => {
+      if (e.key === 'Enter') askQuestion();
+    });
+  </script>
+</body>
+</html>

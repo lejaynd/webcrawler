@@ -2,7 +2,6 @@ package parserQueue
 
 import "github.com/lejaynd/webcrawler/internals/models"
 
-// ParserQueue is a wrapper around a channel for decoupling Crawler from Parser.
 type ParserQueue struct {
 	Queue chan models.ParseTask
 }

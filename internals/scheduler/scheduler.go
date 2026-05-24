@@ -4,8 +4,10 @@ import (
 	"log"
 	"net/url"
 	"sync"
+	"sync/atomic"
 	"time"
 
+	"github.com/bits-and-blooms/bloom/v3"
 	"github.com/lejaynd/webcrawler/internals/buffer"
 	"github.com/lejaynd/webcrawler/internals/crawlerFrontier"
 	"github.com/lejaynd/webcrawler/internals/dlq"
@@ -17,40 +19,53 @@ type Scheduler struct {
 	Incoming chan models.CrawlTask
 	Retries  chan models.CrawlTask
 
-	Frontier *crawlerFrontier.Frontier
-	DLQ      dlq.DLQ
-	Buffer   buffer.Buffer
+	Frontier    *crawlerFrontier.Frontier
+	DLQ         dlq.DLQ
+	Buffer      buffer.Buffer
+	BloomFilter *bloom.BloomFilter
 
 	CrawlDelay   time.Duration
 	MaxDepth     int
 	MaxPerDomain int //max crawls per domain
 
-	visited     map[string]bool
-	domainCount map[string]int
-	visitedLock sync.Mutex
+	Visited     map[string]bool
+	DomainCount map[string]int
+	VisitedLock sync.Mutex
+
+	Paused atomic.Bool
 }
 
-func NewScheduler(frontier *crawlerFrontier.Frontier, deadLetterQueue dlq.DLQ, bufferURL buffer.Buffer) *Scheduler {
+func NewScheduler(frontier *crawlerFrontier.Frontier, deadLetterQueue dlq.DLQ, bufferURL buffer.Buffer, bloomFilter *bloom.BloomFilter) *Scheduler {
 	return &Scheduler{
 		Incoming:     make(chan models.CrawlTask, 1000),
 		Retries:      make(chan models.CrawlTask, 1000),
 		Frontier:     frontier,
 		DLQ:          deadLetterQueue,
 		Buffer:       bufferURL,
+		BloomFilter:  bloomFilter,
 		CrawlDelay:   10 * time.Second,
-		MaxDepth:     3,
-		MaxPerDomain: 100,
-		visited:      make(map[string]bool),
-		domainCount:  make(map[string]int),
+		MaxDepth:     5,
+		MaxPerDomain: 400,
+		Visited:      make(map[string]bool),
+		DomainCount:  make(map[string]int),
 	}
+}
+
+func (s *Scheduler) Stop() {
+	s.Paused.Store(true)
+	log.Println("[Scheduler] Paused - no new URLs will be accepted.")
+}
+
+func (s *Scheduler) Resume() {
+	s.Paused.Store(false)
+	log.Println("[Scheduler] Resumed.")
 }
 
 func (s *Scheduler) Run() {
 	for {
 		select {
 		case inTask := <-s.Incoming:
-
-			if inTask.Depth > s.MaxDepth {
+			if s.Paused.Load() {
 				continue
 			}
 
@@ -65,23 +80,37 @@ func (s *Scheduler) Run() {
 			}
 			host := parsed.Host
 
-			s.visitedLock.Lock()
-			if s.visited[normalizedURL] {
-				s.visitedLock.Unlock()
+			s.VisitedLock.Lock()
+
+			if s.BloomFilter.TestString(normalizedURL) {
+				if s.Visited[normalizedURL] {
+					s.VisitedLock.Unlock()
+					continue
+				}
+			}
+
+			if inTask.Depth > s.MaxDepth {
+				log.Printf("[Buffer] Storing URL in Buffer after max depth reached: %s\n", inTask.URL)
+				s.Buffer.Push(inTask)
+				s.VisitedLock.Unlock()
 				continue
 			}
 
 			//too many crawls, can drop this request to bufferURL
-			if s.domainCount[host] >= s.MaxPerDomain {
+			if s.DomainCount[host] >= s.MaxPerDomain {
 				log.Printf("[Buffer] Storing URL in Buffer after max per domain limit reached: %s\n", inTask.URL)
 				s.Buffer.Push(inTask)
-				s.visitedLock.Unlock()
+				s.VisitedLock.Unlock()
 				continue
 			}
 
-			s.visited[normalizedURL] = true
-			s.domainCount[host]++
-			s.visitedLock.Unlock()
+			s.Visited[normalizedURL] = true
+			s.BloomFilter.AddString(normalizedURL)
+
+			//visited[url] : URL has been passed to frontier
+
+			s.DomainCount[host]++
+			s.VisitedLock.Unlock()
 
 			task := models.CrawlTask{
 				URL:         normalizedURL,
@@ -101,7 +130,7 @@ func (s *Scheduler) Run() {
 				continue
 			}
 
-			// Exponential backoff
+			//exponential backoff
 			backoff := time.Duration(1<<task.RetryCount) * time.Second
 			task.NextRunTime = time.Now().Add(backoff)
 			s.Frontier.PushChan <- task
