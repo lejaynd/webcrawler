@@ -6,7 +6,7 @@ A **highly concurrent, production-grade website-polite web crawler** written in 
 
 ## 📺 Demo
 
-https://github.com/lejaynd/webcrawler/demo.webm
+[Watch Demo](./demo.mp4)
 
 > Seed a URL → watch it crawl in real time → ask questions about the crawled content, powered by Groq's LLaMA.
 
